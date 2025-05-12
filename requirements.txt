@@ -1,10 +1,23 @@
+# FastAPI e dependências principais
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.9
+
+# Requisições HTTP
 requests==2.32.3
+
+# Manipulação de variáveis de ambiente  
 python-dotenv==1.0.1
+
+# FastMCP SDK - versão estável mais recente
 git+https://github.com/modelcontextprotocol/python-sdk.git@main
-pydantic==2.6.0
-pydantic-settings==2.1.0
+
+# JSON encoding e validação (versões compatíveis com MCP)
+pydantic==2.6.3
+pydantic-settings==2.5.2  # Versão mínima requerida pelo MCP
+
+# Para produção no Render/Heroku
 gunicorn==21.2.0
-starlette==0.35.1
+
+# Starlette (base do FastAPI)
+starlette==0.36.3
