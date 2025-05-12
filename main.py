@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.openapi.utils import get_openapi
 
 # Importa o módulo do GitHub
 from github_api import (
@@ -16,7 +17,47 @@ from github_api import (
 
 # Configuração simples
 logging.basicConfig(level=logging.INFO)
-app = FastAPI(title="MCP Git API", version="1.0.0")
+app = FastAPI(
+    title="MCP Git API", 
+    version="1.0.0",
+    servers=[{"url": "https://mcp-git.onrender.com", "description": "Production server"}]
+)
+
+# OpenAPI customizado
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="MCP Git API",
+        version="1.0.0",
+        description="API for GitHub integration via MCP protocol",
+        routes=app.routes,
+    )
+    
+    # Adiciona servers
+    openapi_schema["servers"] = [
+        {"url": "https://mcp-git.onrender.com", "description": "Production server"}
+    ]
+    
+    # Atualiza o endpoint /mcp com operações MCP
+    openapi_schema["paths"]["/mcp"]["post"]["description"] = """
+MCP endpoint for GitHub operations. Available methods:
+- gh_testar_conexao: Test GitHub connection
+- gh_listar_repositorios: List repositories  
+- gh_listar_branches: List branches
+- gh_listar_arquivos: List files
+- gh_obter_conteudo_arquivo: Get file content
+- gh_atualizar_arquivo: Create/update file
+- gh_criar_branch: Create branch
+- gh_criar_commit_multiplo: Multi-file commit
+- gh_criar_pull_request: Create pull request
+    """
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Headers CORS simples
 @app.middleware("http")
@@ -33,8 +74,18 @@ async def root():
         "status": "online",
         "name": "MCP Git API",
         "version": "1.0.0",
-        "endpoint": "https://mcp-git.onrender.com/mcp"
+        "endpoint": "https://mcp-git.onrender.com/mcp",
+        "operations": [
+            "gh_testar_conexao", "gh_listar_repositorios", "gh_listar_branches",
+            "gh_listar_arquivos", "gh_obter_conteudo_arquivo", "gh_atualizar_arquivo",
+            "gh_criar_branch", "gh_criar_commit_multiplo", "gh_criar_pull_request"
+        ]
     }
+
+# OpenAPI endpoint
+@app.get("/.well-known/openapi.json")
+def get_openapi_json():
+    return custom_openapi()
 
 # Endpoint principal MCP
 @app.post("/mcp")
@@ -82,7 +133,19 @@ async def handle_mcp(request: Request):
                 "id": request_id,
                 "result": {
                     "serverInfo": {"name": "MCP Git API", "version": "1.0.0"},
-                    "capabilities": {"tools": ["gh_testar_conexao", "gh_listar_repositorios", "gh_listar_branches", "gh_listar_arquivos", "gh_obter_conteudo_arquivo", "gh_atualizar_arquivo", "gh_criar_branch", "gh_criar_commit_multiplo", "gh_criar_pull_request"]}
+                    "capabilities": {
+                        "tools": {
+                            "gh_testar_conexao": {"description": "Test GitHub connection"},
+                            "gh_listar_repositorios": {"description": "List repositories"},  
+                            "gh_listar_branches": {"description": "List branches"},
+                            "gh_listar_arquivos": {"description": "List files"},
+                            "gh_obter_conteudo_arquivo": {"description": "Get file content"},
+                            "gh_atualizar_arquivo": {"description": "Create/update file"},
+                            "gh_criar_branch": {"description": "Create branch"},
+                            "gh_criar_commit_multiplo": {"description": "Multi-file commit"},
+                            "gh_criar_pull_request": {"description": "Create pull request"}
+                        }
+                    }
                 }
             }
         
