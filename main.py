@@ -24,32 +24,23 @@ app = FastAPI(
     servers=[{"url": "https://mcp-git.onrender.com", "description": "Production server"}]
 )
 
-# Models para endpoints REST
+# Models para endpoints REST (sem duplicar parâmetros da URL)
 class FileData(BaseModel):
-    repo_owner: str
-    repo_name: str
-    path: str
     conteudo: str
     mensagem_commit: str
     branch: Optional[str] = None
     sha: Optional[str] = None
 
 class BranchData(BaseModel):
-    repo_owner: str
-    repo_name: str
     nome_branch: str
     branch_base: Optional[str] = None
 
 class MultiCommitData(BaseModel):
-    repo_owner: str
-    repo_name: str
     mensagem_commit: str
     alteracoes: List[Dict[str, str]]
     branch: Optional[str] = None
 
 class PullRequestData(BaseModel):
-    repo_owner: str
-    repo_name: str
     titulo: str
     descricao: str
     branch_origem: str
