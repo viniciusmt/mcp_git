@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""MCP Git API Server - Versão Simplificada"""
+"""MCP Git API Server - Com endpoints HTTP diretos"""
 
 import os
 import logging
-from typing import Dict, Any
-from fastapi import FastAPI, Request
+from typing import Dict, Any, Optional, List
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
+from pydantic import BaseModel
 
 # Importa o módulo do GitHub
 from github_api import (
@@ -23,6 +24,37 @@ app = FastAPI(
     servers=[{"url": "https://mcp-git.onrender.com", "description": "Production server"}]
 )
 
+# Models para endpoints REST
+class FileData(BaseModel):
+    repo_owner: str
+    repo_name: str
+    path: str
+    conteudo: str
+    mensagem_commit: str
+    branch: Optional[str] = None
+    sha: Optional[str] = None
+
+class BranchData(BaseModel):
+    repo_owner: str
+    repo_name: str
+    nome_branch: str
+    branch_base: Optional[str] = None
+
+class MultiCommitData(BaseModel):
+    repo_owner: str
+    repo_name: str
+    mensagem_commit: str
+    alteracoes: List[Dict[str, str]]
+    branch: Optional[str] = None
+
+class PullRequestData(BaseModel):
+    repo_owner: str
+    repo_name: str
+    titulo: str
+    descricao: str
+    branch_origem: str
+    branch_destino: str
+
 # OpenAPI customizado
 def custom_openapi():
     if app.openapi_schema:
@@ -31,41 +63,117 @@ def custom_openapi():
     openapi_schema = get_openapi(
         title="MCP Git API",
         version="1.0.0",
-        description="API for GitHub integration via MCP protocol",
+        description="API for GitHub integration via MCP protocol and REST endpoints",
         routes=app.routes,
     )
     
-    # Adiciona servers
     openapi_schema["servers"] = [
         {"url": "https://mcp-git.onrender.com", "description": "Production server"}
     ]
-    
-    # Atualiza o endpoint /mcp com operações MCP
-    openapi_schema["paths"]["/mcp"]["post"]["description"] = """
-MCP endpoint for GitHub operations. Available methods:
-- gh_testar_conexao: Test GitHub connection
-- gh_listar_repositorios: List repositories  
-- gh_listar_branches: List branches
-- gh_listar_arquivos: List files
-- gh_obter_conteudo_arquivo: Get file content
-- gh_atualizar_arquivo: Create/update file
-- gh_criar_branch: Create branch
-- gh_criar_commit_multiplo: Multi-file commit
-- gh_criar_pull_request: Create pull request
-    """
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
 app.openapi = custom_openapi
 
-# Headers CORS simples
+# Headers CORS
 @app.middleware("http")
 async def add_cors(request: Request, call_next):
     response = await call_next(request)
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
+
+# === ENDPOINTS HTTP DIRETOS ===
+
+# Testar conexão
+@app.get("/test-connection", tags=["GitHub"])
+async def test_github_connection():
+    """🔗 Testa conexão com a API do GitHub"""
+    return testar_conexao()
+
+# Listar repositórios
+@app.get("/repositories", tags=["GitHub"])
+async def list_repositories(username: Optional[str] = None):
+    """📚 Lista repositórios do usuário ou organização"""
+    return listar_repositorios(username)
+
+# Listar branches
+@app.get("/repositories/{repo_owner}/{repo_name}/branches", tags=["GitHub"])
+async def list_branches(repo_owner: str, repo_name: str):
+    """🌿 Lista branches de um repositório"""
+    result = listar_branches(repo_owner, repo_name)
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=404, detail=result.get("mensagem"))
+    return result
+
+# Listar arquivos
+@app.get("/repositories/{repo_owner}/{repo_name}/contents", tags=["GitHub"])
+async def list_files(repo_owner: str, repo_name: str, path: str = "", branch: Optional[str] = None):
+    """📁 Lista arquivos e diretórios de um repositório"""
+    result = listar_arquivos(repo_owner, repo_name, path, branch)
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=404, detail=result.get("mensagem"))
+    return result
+
+# Obter arquivo
+@app.get("/repositories/{repo_owner}/{repo_name}/contents/{path:path}", tags=["GitHub"])
+async def get_file(repo_owner: str, repo_name: str, path: str, branch: Optional[str] = None):
+    """📖 Obtém conteúdo de um arquivo específico"""
+    result = obter_conteudo_arquivo(repo_owner, repo_name, path, branch)
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=404, detail=result.get("mensagem"))
+    return result
+
+# Criar/atualizar arquivo
+@app.post("/repositories/{repo_owner}/{repo_name}/contents/{path:path}", tags=["GitHub"])
+async def create_or_update_file(repo_owner: str, repo_name: str, path: str, data: FileData):
+    """✏️ Cria ou atualiza um arquivo no repositório"""
+    result = atualizar_arquivo(
+        repo_owner, repo_name, path, 
+        data.conteudo, data.mensagem_commit, 
+        data.branch, data.sha
+    )
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=400, detail=result.get("mensagem"))
+    return result
+
+# Criar branch
+@app.post("/repositories/{repo_owner}/{repo_name}/branches", tags=["GitHub"])
+async def create_branch(repo_owner: str, repo_name: str, data: BranchData):
+    """🔀 Cria uma nova branch no repositório"""
+    result = criar_branch(repo_owner, repo_name, data.nome_branch, data.branch_base)
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=400, detail=result.get("mensagem"))
+    return result
+
+# Commit múltiplo
+@app.post("/repositories/{repo_owner}/{repo_name}/commits", tags=["GitHub"])
+async def create_multi_commit(repo_owner: str, repo_name: str, data: MultiCommitData):
+    """📦 Cria um commit com múltiplos arquivos"""
+    result = criar_commit_multiplo(
+        repo_owner, repo_name, 
+        data.mensagem_commit, data.alteracoes, 
+        data.branch
+    )
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=400, detail=result.get("mensagem"))
+    return result
+
+# Criar pull request
+@app.post("/repositories/{repo_owner}/{repo_name}/pulls", tags=["GitHub"])
+async def create_pull_request(repo_owner: str, repo_name: str, data: PullRequestData):
+    """🔄 Cria um pull request no repositório"""
+    result = criar_pull_request(
+        repo_owner, repo_name, data.titulo, data.descricao,
+        data.branch_origem, data.branch_destino
+    )
+    if not result.get("sucesso"):
+        raise HTTPException(status_code=400, detail=result.get("mensagem"))
+    return result
+
+# === ENDPOINTS MCP (mantidos) ===
 
 # Status
 @app.get("/")
@@ -74,12 +182,18 @@ async def root():
         "status": "online",
         "name": "MCP Git API",
         "version": "1.0.0",
-        "endpoint": "https://mcp-git.onrender.com/mcp",
-        "operations": [
-            "gh_testar_conexao", "gh_listar_repositorios", "gh_listar_branches",
-            "gh_listar_arquivos", "gh_obter_conteudo_arquivo", "gh_atualizar_arquivo",
-            "gh_criar_branch", "gh_criar_commit_multiplo", "gh_criar_pull_request"
-        ]
+        "protocols": ["REST", "MCP"],
+        "rest_endpoints": {
+            "test_connection": "/test-connection",
+            "repositories": "/repositories",
+            "branches": "/repositories/{owner}/{repo}/branches",
+            "files": "/repositories/{owner}/{repo}/contents",
+            "create_file": "POST /repositories/{owner}/{repo}/contents/{path}",
+            "create_branch": "POST /repositories/{owner}/{repo}/branches",
+            "create_commit": "POST /repositories/{owner}/{repo}/commits",
+            "create_pr": "POST /repositories/{owner}/{repo}/pulls"
+        },
+        "mcp_endpoint": "/mcp"
     }
 
 # OpenAPI endpoint
@@ -87,9 +201,10 @@ async def root():
 def get_openapi_json():
     return custom_openapi()
 
-# Endpoint principal MCP
-@app.post("/mcp")
+# Endpoint MCP (mantido para compatibilidade)
+@app.post("/mcp", tags=["MCP"])
 async def handle_mcp(request: Request):
+    """🔄 Endpoint MCP para operações via JSON-RPC"""
     try:
         body = await request.json()
         method = body.get("method")
