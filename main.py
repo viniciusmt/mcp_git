@@ -56,7 +56,17 @@ app = FastAPI(
     title="MCP Git API",
     description="API para integração GitHub via protocolo MCP",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    servers=[
+        {
+            "url": "https://mcp-git.onrender.com",
+            "description": "Production server"
+        },
+        {
+            "url": "http://localhost:10000",
+            "description": "Development server"
+        }
+    ]
 )
 
 def get_custom_openapi():
@@ -75,6 +85,25 @@ def get_custom_openapi():
     openapi_schema["info"]["x-mcp-version"] = "2024-11-05"
     openapi_schema["info"]["x-mcp-protocol"] = True
     
+    # Configura os servidores corretamente
+    openapi_schema["servers"] = [
+        {
+            "url": "https://mcp-git.onrender.com",
+            "description": "Production server"
+        },
+        {
+            "url": "http://localhost:10000",
+            "description": "Development server"
+        }
+    ]
+    
+    # Adiciona configurações específicas do MCP
+    openapi_schema["info"]["x-mcp-server"] = {
+        "name": "MCP Git API",
+        "version": "1.0.0",
+        "protocol": "mcp"
+    }
+    
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
@@ -86,8 +115,19 @@ async def root():
         "status": "online",
         "name": "MCP Git API",
         "version": "1.0.0",
-        "protocol": "MCP"
+        "protocol": "MCP",
+        "server": "https://mcp-git.onrender.com",
+        "endpoints": {
+            "mcp": "/mcp",
+            "openapi": "/.well-known/openapi.json"
+        }
     }
+
+# Rota para obter especificação OpenAPI
+@app.get("/.well-known/openapi.json")
+def mcp_openapi():
+    """Rota para a especificação OpenAPI no formato exigido pelo MCP."""
+    return get_custom_openapi()
 
 # Rota para lidar com requisições MCP
 @app.post("/mcp", tags=["MCP"])
@@ -438,12 +478,6 @@ async def handle_mcp(request: Request):
                 "error": {"code": -32603, "message": f"Erro interno: {str(e)}"}
             }
         )
-
-# Rota para obter especificação OpenAPI
-@app.get("/.well-known/openapi.json")
-def mcp_openapi():
-    """Rota para a especificação OpenAPI no formato exigido pelo MCP."""
-    return get_custom_openapi()
 
 # Sobrescreve a função openapi padrão do FastAPI
 app.openapi = get_custom_openapi
