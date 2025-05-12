@@ -36,10 +36,17 @@ from github_api import (
     testar_conexao
 )
 
+# Configuração de ambiente e URL base
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+BASE_URL = os.getenv("BASE_URL", "https://mcp-git.onrender.com")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gerencia o ciclo de vida da aplicação"""
     logger.info("Iniciando MCP Git API Server...")
+    logger.info(f"Ambiente: {ENVIRONMENT}")
+    logger.info(f"URL Base: {BASE_URL}")
+    
     # Testa conexão com GitHub na inicialização
     result = testar_conexao()
     if result.get("sucesso"):
@@ -51,7 +58,7 @@ async def lifespan(app: FastAPI):
     
     logger.info("Finalizando MCP Git API Server...")
 
-# Inicializa FastAPI com lifespan
+# Inicializa FastAPI com configuração única de servidor
 app = FastAPI(
     title="MCP Git API",
     description="API para integração GitHub via protocolo MCP",
@@ -59,12 +66,8 @@ app = FastAPI(
     lifespan=lifespan,
     servers=[
         {
-            "url": "https://mcp-git.onrender.com",
-            "description": "Production server"
-        },
-        {
-            "url": "http://localhost:10000",
-            "description": "Development server"
+            "url": BASE_URL,
+            "description": "MCP Git API Server"
         }
     ]
 )
@@ -85,15 +88,11 @@ def get_custom_openapi():
     openapi_schema["info"]["x-mcp-version"] = "2024-11-05"
     openapi_schema["info"]["x-mcp-protocol"] = True
     
-    # Configura os servidores corretamente
+    # Configura apenas um servidor para evitar conflitos
     openapi_schema["servers"] = [
         {
-            "url": "https://mcp-git.onrender.com",
-            "description": "Production server"
-        },
-        {
-            "url": "http://localhost:10000",
-            "description": "Development server"
+            "url": BASE_URL,
+            "description": "MCP Git API Server"
         }
     ]
     
@@ -101,11 +100,24 @@ def get_custom_openapi():
     openapi_schema["info"]["x-mcp-server"] = {
         "name": "MCP Git API",
         "version": "1.0.0",
-        "protocol": "mcp"
+        "protocol": "mcp",
+        "url": BASE_URL
     }
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema
+
+# Middleware para garantir CORS se necessário
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 # Rota principal para status
 @app.get("/", tags=["Status"])
@@ -116,10 +128,12 @@ async def root():
         "name": "MCP Git API",
         "version": "1.0.0",
         "protocol": "MCP",
-        "server": "https://mcp-git.onrender.com",
+        "server": BASE_URL,
+        "environment": ENVIRONMENT,
         "endpoints": {
-            "mcp": "/mcp",
-            "openapi": "/.well-known/openapi.json"
+            "mcp": f"{BASE_URL}/mcp",
+            "openapi": f"{BASE_URL}/.well-known/openapi.json",
+            "status": f"{BASE_URL}/"
         }
     }
 
@@ -128,6 +142,20 @@ async def root():
 def mcp_openapi():
     """Rota para a especificação OpenAPI no formato exigido pelo MCP."""
     return get_custom_openapi()
+
+# Rota OPTIONS para suporte a CORS
+@app.options("/mcp")
+async def mcp_options():
+    """OPTIONS endpoint para CORS"""
+    return JSONResponse(
+        status_code=200,
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        }
+    )
 
 # Rota para lidar com requisições MCP
 @app.post("/mcp", tags=["MCP"])
