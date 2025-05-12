@@ -107,16 +107,27 @@ def get_custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
-# Middleware para garantir CORS se necessário
+# Middleware para garantir CORS
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next):
+async def add_cors_header(request: Request, call_next):
     response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    # Headers de segurança e CORS
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    
+    # Headers de segurança
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    # Adiciona headers específicos para OpenAPI
+    if request.url.path == "/.well-known/openapi.json":
+        response.headers["Content-Type"] = "application/json"
+        response.headers["Cache-Control"] = "public, max-age=3600"
+    
     return response
 
 # Rota principal para status
@@ -142,20 +153,6 @@ async def root():
 def mcp_openapi():
     """Rota para a especificação OpenAPI no formato exigido pelo MCP."""
     return get_custom_openapi()
-
-# Rota OPTIONS para suporte a CORS
-@app.options("/mcp")
-async def mcp_options():
-    """OPTIONS endpoint para CORS"""
-    return JSONResponse(
-        status_code=200,
-        content={"message": "OK"},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization"
-        }
-    )
 
 # Rota para lidar com requisições MCP
 @app.post("/mcp", tags=["MCP"])
