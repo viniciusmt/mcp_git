@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: mcp-git-api
+    env: python
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.7
+      - key: GITHUB_TOKEN
+        sync: false  # Você precisa adicionar manualmente no painel do Render
+      - key: ENVIRONMENT
+        value: production
+    healthCheckPath: /
+    disk:
+      name: mcp-git-api-disk
+      size: 1GB
+      mountPath: /tmp
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+      targetCPU: 70
+      targetMemory: 70
